@@ -1,0 +1,353 @@
+
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PandoSwap交易浏览器</title>
+    <style>
+        body {
+            font-family: sans-serif;
+        }
+
+        .transaction-list {
+            width: 80%;
+            margin: 20px auto;
+        }
+
+        .transaction-item {
+            border: 1px solid #ccc;
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 5px;
+        }
+        
+        .transaction-group {
+            border: 2px solid #eee; /* 组的边框 */
+            margin-bottom: 20px; /* 组之间的间距 */
+            padding: 10px;
+            border-radius: 8px;
+        }
+
+        .loading {
+            text-align: center;
+            margin-top: 20px;
+        }
+
+        #loadingBar { /* 进度条样式 */
+            width: 200px;
+            height: 10px;
+            background-color: #e0e0e0;
+            border-radius: 5px;
+            margin: 10px auto;
+            overflow: hidden; /* 隐藏溢出部分 */
+        }
+
+        #loadingBar .progress { /* 进度条进度样式 */
+            height: 100%;
+            background-color: #007bff;
+            width: 0%; /* 初始宽度为 0% */
+            transition: width 0.3s ease; /* 添加过渡效果 */
+        }
+        
+        .transaction-description { /* 添加样式以使交易描述可点击 */
+            cursor: pointer;
+        }
+        .transaction-description .time { /* 时间样式 */
+            font-weight: normal;
+        }
+
+        .transaction-description .chain { /* 交易链样式 */
+            font-weight: bold;
+        }
+        
+        .json-details {
+            white-space: pre-wrap; /* 保留换行和空格 */
+            font-family: monospace; /* 使用等宽字体 */
+            border: 1px solid #ccc;
+            padding: 10px;
+            margin-top: 5px;
+            display: none; /* 默认隐藏 */
+        }
+        
+        #backToTop { /* 回到顶部按钮样式 */
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            display: none; /* 默认隐藏 */
+            background-color: #49aed3;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+
+<body>
+    <button id="backToTop">回到顶部</button>
+    <div class="transaction-list" id="transactionList">
+        <!-- 交易记录将在此处显示 -->
+    </div>
+    <div class="loading" id="loading">
+        加载中...
+        <div id="loadingBar">
+            <div class="progress"></div>
+        </div>
+    </div>
+
+    <script>
+        let assets = {}; // 存储资产信息的字典
+
+        async function fetchAssets() {
+            try {
+                const response = await fetch('https://safe-swap-api.pando.im/api/assets');
+                if (!response.ok) {
+                    throw new Error(`Network response was not ok: ${response.status}`);
+                }
+                const data = await response.json();
+                return data.data.assets;
+            } catch (error) {
+                console.error("获取资产信息失败:", error);
+                return [];
+            }
+        }
+
+        function createAssetMap(assetsArray) {
+            const assetMap = {};
+            assetsArray.forEach(asset => {
+                assetMap[asset.id] = asset;
+            });
+            return assetMap;
+        }
+        const backToTopButton = document.getElementById('backToTop');
+
+        // 回到顶部按钮点击事件
+        backToTopButton.addEventListener('click', () => {
+            window.scrollTo({
+                top: 0,
+                behavior: 'smooth'
+            });
+        });
+        
+        const transactionList = document.getElementById('transactionList');
+        const loadingIndicator = document.getElementById('loading');
+        const loadingBar = document.getElementById('loadingBar');
+        const progressBar = loadingBar.querySelector('.progress');
+        let nextCursor = ''; // 使用 nextCursor 进行分页
+        let isLoading = false;
+
+        async function fetchTransactions(cursor) {
+            isLoading = true;
+            loadingIndicator.style.display = 'block';
+            let startTime = Date.now(); // 记录请求开始时间
+
+            try {
+                const url = `https://safe-swap-api.pando.im/api/transactions?cursor=${cursor}&limit=100`;
+                const response = await fetch(url);
+                if (!response.ok) {
+                    throw new Error(`Network response was not ok: ${response.status}`);
+                }
+                const data = await response.json();
+                return data;
+            } catch (error) {
+                console.error("获取交易记录失败:", error);
+                return {
+                    data: {
+                        transactions: [],
+                        pagination: {
+                            has_next: false
+                        }
+                    }
+                }; // 返回空数据和 has_next: false
+            } finally {
+                isLoading = false;
+                loadingIndicator.style.display = 'none';
+
+                // 重置进度条
+                progressBar.style.width = '0%';
+            }
+        }
+
+        function mergeTransactions(transactions) {
+            const merged = {};
+            // 按照时间顺序排序交易记录 (从远到近)
+            transactions.forEach(transaction => {
+                if (transaction.type != "Swap") {
+                    return;
+                }
+                const baseAsset = assets[transaction.base_asset_id] || {
+                    display_symbol: transaction.base_asset_id
+                };
+                const quoteAsset = assets[transaction.quote_asset_id] || {
+                    display_symbol: transaction.quote_asset_id
+                };
+
+                const baseAmount = parseFloat(transaction.base_amount);
+                const quoteAmount = parseFloat(transaction.quote_amount);
+
+                let input, output;
+                if (baseAmount > 0) {
+                    input = `${baseAmount.toFixed(8).replace(/(\.0+|(?<=(\..*))0+)$/, '')} ${baseAsset.display_symbol}`;
+                    output = `${Math.abs(quoteAmount).toFixed(8).replace(/(\.0+|(?<=(\..*))0+)$/, '')} ${quoteAsset.display_symbol}`;
+                } else {
+                    input = `${quoteAmount.toFixed(8).replace(/(\.0+|(?<=(\..*))0+)$/, '')} ${quoteAsset.display_symbol}`;
+                    output = `${Math.abs(baseAmount).toFixed(8).replace(/(\.0+|(?<=(\..*))0+)$/, '')} ${baseAsset.display_symbol}`;
+                }
+
+                if (!merged[transaction.group_id]) {
+                    merged[transaction.group_id] = [];
+                }
+
+                // 将输入和输出添加到组中
+                merged[transaction.group_id].unshift({
+                    input,
+                    output,
+                    id: transaction.id,
+                    group_id: transaction.group_id,
+                    created_at: transaction.created_at
+                });
+            });
+
+            // 将每个组的交易合并成一个字符串
+            const mergedTransactions = [];
+            for (const groupId in merged) {
+                const group = merged[groupId];
+                let description = "";
+                let mark = 0;
+                for (let i = 0; i < group.length; i++) {
+                    if (i == 0) {
+                        description += group[i].input + " => " + group[i].output;
+                    } else {
+                        if (group[i].input == group[i - 1].output) {
+                            description += " => " + group[i].output
+                        } else {
+                            mergedTransactions.push({
+                                id: groupId,
+                                description,
+                                created_at: group[0].created_at,
+                                detail: group.slice(mark, i)
+                            });
+                            mark = i;
+                            description = group[i].input + " => " + group[i].output;
+                        }
+                    }
+                }
+                mergedTransactions.push({
+                    id: groupId,
+                    description,
+                    created_at: group[0].created_at,
+                    detail: group.slice(mark)
+                });
+            }
+
+            // 按照时间顺序排序合并后的交易记录 (从远到近)
+            mergedTransactions.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+            return mergedTransactions;
+        }
+
+        function formatDateTime(date) {
+            const year = date.getFullYear();
+            const month = date.getMonth() + 1;
+            const day = date.getDate();
+            const hour = date.getHours();
+            const minute = date.getMinutes();
+            const second = date.getSeconds();
+            return `${year}-${pad(month)}-${pad(day)} ${pad(hour)}:${pad(minute)}:${pad(second)}`;
+        }
+
+        function pad(num) {
+            return num.toString().padStart(2, "0");
+        }
+
+        function displayTransactions(transactions) {
+            const mergedTransactions = mergeTransactions(transactions);
+            mergedTransactions.forEach(transaction => {
+                const item = document.createElement('div');
+                item.classList.add('transaction-item');
+                // 创建交易描述元素（用于点击）和 JSON 文本框
+                const transactionDescription = document.createElement('p');
+                transactionDescription.classList.add('transaction-description');
+                transactionDescription.innerHTML = `
+                    <span class="time">${formatDateTime(new Date(transaction.created_at))}: </span>
+                    <span class="chain">${transaction.description}</span>
+                `; // 使用 innerHTML 并添加 span 元素
+                transactionDescription.style.cursor = 'pointer'; // 设置鼠标样式为指针
+
+                const jsonDetails = document.createElement('div');
+                jsonDetails.classList.add('json-details');
+                jsonDetails.textContent = JSON.stringify(transaction.detail, null, 2);
+
+                let isDetailsVisible = false;
+
+                // 将点击事件添加到交易描述元素上
+                transactionDescription.addEventListener('click', () => {
+                    isDetailsVisible = !isDetailsVisible;
+                    if (isDetailsVisible) {
+                        jsonDetails.style.display = 'block';
+                    } else {
+                        jsonDetails.style.display = 'none';
+                    }
+                });
+                item.appendChild(transactionDescription); // 添加交易描述（可点击）
+                item.appendChild(jsonDetails);
+                transactionList.appendChild(item);
+            });
+        }
+
+        async function loadMoreTransactions() {
+            if (isLoading) return;
+
+            const data = await fetchTransactions(nextCursor);
+            displayTransactions(data.data.transactions);
+
+            if (data.data.pagination.has_next) {
+                nextCursor = data.data.pagination.next_cursor;
+            } else {
+                window.removeEventListener('scroll', handleScroll);
+            }
+            // 模拟加载进度 (实际项目中根据实际加载进度更新)
+            let progress = 0;
+            const interval = setInterval(() => {
+                progress += 10; // 每 500ms 增加 10%
+                progressBar.style.width = progress + '%';
+                if (progress >= 100) {
+                    clearInterval(interval);
+                }
+            }, 500);
+        }
+
+
+        function handleScroll() {
+            const {
+                scrollTop,
+                clientHeight,
+                scrollHeight
+            } = document.documentElement;
+            if (scrollTop + clientHeight >= scrollHeight - 100) {
+                loadMoreTransactions();
+            }
+            // 显示/隐藏回到顶部按钮
+            if (document.documentElement.scrollTop > 200) { // 当页面向下滚动超过 200px 时显示按钮
+                backToTopButton.style.display = 'block';
+            } else {
+                backToTopButton.style.display = 'none';
+            }
+        }
+
+        async function initialize() {
+            const assetsArray = await fetchAssets();
+            assets = createAssetMap(assetsArray); // 创建资产信息字典
+
+            // 初始加载交易记录
+            loadMoreTransactions();
+        }
+
+        window.addEventListener('scroll', handleScroll);
+
+        // 初始化
+        initialize();
+    </script>
+</body>
+</html>
