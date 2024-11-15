@@ -1,6 +1,7 @@
 
 <!DOCTYPE html>
 <html lang="zh-CN">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -21,10 +22,12 @@
             margin-bottom: 10px;
             border-radius: 5px;
         }
-        
+
         .transaction-group {
-            border: 2px solid #eee; /* 组的边框 */
-            margin-bottom: 20px; /* 组之间的间距 */
+            border: 2px solid #eee;
+            /* 组的边框 */
+            margin-bottom: 20px;
+            /* 组之间的间距 */
             padding: 10px;
             border-radius: 8px;
         }
@@ -34,50 +37,94 @@
             margin-top: 20px;
         }
 
-        #loadingBar { /* 进度条样式 */
+        #loadingBar {
+            /* 进度条样式 */
             width: 200px;
             height: 10px;
             background-color: #e0e0e0;
             border-radius: 5px;
             margin: 10px auto;
-            overflow: hidden; /* 隐藏溢出部分 */
+            overflow: hidden;
+            /* 隐藏溢出部分 */
         }
 
-        #loadingBar .progress { /* 进度条进度样式 */
+        #loadingBar .progress {
+            /* 进度条进度样式 */
             height: 100%;
             background-color: #007bff;
-            width: 0%; /* 初始宽度为 0% */
-            transition: width 0.3s ease; /* 添加过渡效果 */
+            width: 0%;
+            /* 初始宽度为 0% */
+            transition: width 0.3s ease;
+            /* 添加过渡效果 */
         }
-        
-        .transaction-description { /* 添加样式以使交易描述可点击 */
+
+        .transaction-description {
+            /* 添加样式以使交易描述可点击 */
             cursor: pointer;
         }
-        .transaction-description .time { /* 时间样式 */
+
+        .transaction-description .time {
+            /* 时间样式 */
             font-weight: normal;
         }
 
-        .transaction-description .chain { /* 交易链样式 */
+        .transaction-description .chain {
+            /* 交易链样式 */
             font-weight: bold;
         }
-        
+
         .json-details {
-            white-space: pre-wrap; /* 保留换行和空格 */
-            font-family: monospace; /* 使用等宽字体 */
+            white-space: pre-wrap;
+            /* 保留换行和空格 */
+            font-family: monospace;
+            /* 使用等宽字体 */
             border: 1px solid #ccc;
             padding: 10px;
             margin-top: 5px;
-            display: none; /* 默认隐藏 */
+            display: none;
+            /* 默认隐藏 */
         }
-        
-        #backToTop { /* 回到顶部按钮样式 */
+
+        #filterButton {
             position: fixed;
-            bottom: 20px;
+            /* 调整距离底部距离 */
+            bottom: 140px;
+            z-index: 10;
             right: 20px;
-            display: none; /* 默认隐藏 */
             background-color: #49aed3;
             color: white;
             padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        #loadMoreButton {
+            position: fixed;
+            /* 调整距离底部距离 */
+            bottom: 80px;
+            z-index: 10;
+            right: 20px;
+            background-color: #49aed3;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        #backToTop {
+            /* 回到顶部按钮样式 */
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 10;
+            display: none;
+            /* 默认隐藏 */
+            background-color: #49aed3;
+            color: white;
+            padding: 10px 20px;
+            border: none;
             border-radius: 5px;
             cursor: pointer;
         }
@@ -85,6 +132,8 @@
 </head>
 
 <body>
+    <button id="filterButton">过滤大额交易</button>
+    <button id="loadMoreButton">加载更多</button>
     <button id="backToTop">回到顶部</button>
     <div class="transaction-list" id="transactionList">
         <!-- 交易记录将在此处显示 -->
@@ -120,6 +169,24 @@
             });
             return assetMap;
         }
+
+        const filterButton = document.getElementById('filterButton');
+        const loadMoreButton = document.getElementById('loadMoreButton'); // 获取加载更多按钮
+        let isFiltered = false; // 标记是否已过滤
+
+        // 过滤按钮点击事件
+        filterButton.addEventListener('click', async () => {
+            isFiltered = !isFiltered; // 切换过滤状态
+            transactionList.innerHTML = ''; // 清空交易列表
+            nextCursor = ''; // 重置 nextCursor
+            await loadMoreTransactions(); // 重新加载交易记录
+        });
+
+        // 加载更多按钮点击事件
+        loadMoreButton.addEventListener('click', () => {
+            loadMoreTransactions();
+        });
+
         const backToTopButton = document.getElementById('backToTop');
 
         // 回到顶部按钮点击事件
@@ -129,7 +196,7 @@
                 behavior: 'smooth'
             });
         });
-        
+
         const transactionList = document.getElementById('transactionList');
         const loadingIndicator = document.getElementById('loading');
         const loadingBar = document.getElementById('loadingBar');
@@ -143,12 +210,19 @@
             let startTime = Date.now(); // 记录请求开始时间
 
             try {
-                const url = `https://safe-swap-api.pando.im/api/transactions?cursor=${cursor}&limit=100`;
+                const url = `https://safe-swap-api.pando.im/api/transactions?cursor=${cursor}&limit=500`;
                 const response = await fetch(url);
                 if (!response.ok) {
                     throw new Error(`Network response was not ok: ${response.status}`);
                 }
                 const data = await response.json();
+                // 过滤交易记录 (如果 isFiltered 为 true)
+                if (isFiltered) {
+                    data.data.transactions = data.data.transactions.filter(transaction => {
+                        const value = parseFloat(transaction.value);
+                        return value >= 8000;
+                    });
+                }
                 return data;
             } catch (error) {
                 console.error("获取交易记录失败:", error);
@@ -350,4 +424,5 @@
         initialize();
     </script>
 </body>
+
 </html>
