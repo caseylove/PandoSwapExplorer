@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="zh-CN">
 
@@ -9,18 +8,41 @@
     <style>
         body {
             font-family: sans-serif;
+            background-color: #f8f9fa;
+            /* 添加背景颜色 */
         }
 
         .transaction-list {
-            width: 80%;
+            width: 90%;
+            /* 调整宽度 */
+            max-width: 800px;
+            /* 设置最大宽度 */
             margin: 20px auto;
+            padding: 20px;
+            /* 添加内边距 */
+            background-color: white;
+            /* 添加背景颜色 */
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            /* 添加阴影 */
+            border-radius: 8px;
+            /* 添加圆角 */
         }
 
         .transaction-item {
-            border: 1px solid #ccc;
-            padding: 10px;
+            border: none;
+            /* 去除边框 */
+            padding: 15px 20px;
+            /* 调整内边距 */
             margin-bottom: 10px;
-            border-radius: 5px;
+            background-color: #f0f0f5;
+            /* 添加背景颜色 */
+            border-radius: 8px;
+            transition: background-color 0.3s ease;
+            /* 添加 hover 效果 */
+        }
+
+        .transaction-item:hover {
+            background-color: #e0e0eb;
         }
 
         .transaction-group {
@@ -59,18 +81,21 @@
         }
 
         .transaction-description {
-            /* 添加样式以使交易描述可点击 */
-            cursor: pointer;
+            font-size: 1.1rem;
+            /* 增加字体大小 */
+            margin-bottom: 5px;
+            /* 调整底部外边距 */
         }
 
         .transaction-description .time {
-            /* 时间样式 */
-            font-weight: normal;
+            color: #6c757d;
+            /* 调整时间颜色 */
         }
 
         .transaction-description .chain {
             /* 交易链样式 */
-            font-weight: bold;
+            font-weight: 300;
+            /* 调整字体粗细 */
         }
 
         .json-details {
@@ -81,8 +106,11 @@
             border: 1px solid #ccc;
             padding: 10px;
             margin-top: 5px;
-            display: none;
             /* 默认隐藏 */
+            display: none;
+            background-color: #f5f5f5;
+            /* 添加背景颜色 */
+            border-radius: 5px;
         }
 
         #filterButton {
@@ -165,6 +193,11 @@
         function createAssetMap(assetsArray) {
             const assetMap = {};
             assetsArray.forEach(asset => {
+                if (asset.id == "b91e18ff-a9ae-3dc7-8679-e935d9a4b34b") {
+                    asset.display_symbol = "USDT(TRC)";
+                } else if (asset.id == "235d8ced-3d41-3c2f-8368-7dba52cb9868") {
+                    asset.display_symbol = "HMT(POS)";
+                }
                 assetMap[asset.id] = asset;
             });
             return assetMap;
@@ -316,7 +349,21 @@
             }
 
             // 按照时间顺序排序合并后的交易记录 (从远到近)
-            mergedTransactions.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+            mergedTransactions.sort((a, b) => {
+                const dateA = new Date(a.created_at);
+                const dateB = new Date(b.created_at);
+
+                // 先按照 created_at 从近到远排序
+                if (dateA < dateB) {
+                    return 1;
+                }
+                if (dateA > dateB) {
+                    return -1;
+                }
+
+                // 如果 created_at 相等，则按照 id 从大到小排序
+                return b.id - a.id;
+            });
 
             return mergedTransactions;
         }
